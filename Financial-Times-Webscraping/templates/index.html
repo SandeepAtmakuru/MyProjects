@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Application</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>News Application</h1>
+        <div class="search-box">
+            <input type="text" id="search-query" placeholder="Enter search query">
+            <button onclick="fetchNews()">Search</button>
+        </div>
+        <div id="news-results" class="news-results"></div>
+        <div id="full-article" class="full-article"></div>
+    </div>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
