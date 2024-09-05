@@ -1,92 +1,169 @@
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredExcelLoader, CSVLoader
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_openai import ChatOpenAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
-from langchain.tools import tool
-from dotenv import load_dotenv
-import tempfile
+from langchain.chains.retrieval import create_retrieval_chain
 import os
+from langchain_community.document_loaders import PyPDFLoader
+import tempfile
+from langchain.tools import tool
+from langchain_community.document_loaders import Docx2txtLoader
+from langchain_community.document_loaders import TextLoader
+from langchain_community.document_loaders import UnstructuredExcelLoader
+from langchain_community.document_loaders.csv_loader import CSVLoader
+CHROMA_PATH = "chat_chroma"
+class llmGen:
+    apiKey=None
+    def setApiKey(key):
+        llmGen.apiKey=key
+        os.environ['OPENAI_API_KEY']=key
 
-# Load environment variables from .env file
-load_dotenv()
+    def getKey(self):
+        if self.apiKey:
+            return self.apiKey
 
-# Initialize the OpenAI API key
-key = os.getenv("OPENAI_API_KEY")
+    def getllm(self):
+        llm = ChatOpenAI(
+        model="gpt-3.5-turbo",
+        streaming=True,
+        temperature=0,
+        api_key=self.getKey()
+        )
 
-# Initialize the language model
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
-    streaming=True,
-    temperature=0
-)
+        return llm
 
-class PDFLoader:
+
+
+llm=llmGen()
+
+
+
+
+    
+
+
+
+class pdf_loader():
+    retrieval_chain=None
     @staticmethod
     def pdf_reader(pdf_files):
-        documents = []
+        print(pdf_files,type(pdf_files))
+        documents=[]
         if pdf_files is None:
-            return "No files provided."
-
+            return "I dont have any information"
         for file in pdf_files:
-            content = file.read()
-            temp_file_path = tempfile.mktemp()
-
-            with open(temp_file_path, 'wb') as temp_file:
-                temp_file.write(content)
-
-            try:
+            # Read the content of the uploaded PDF file
+            
+            # Load the PDF content into PyPDFLoader                  
                 if file.name.endswith('.pdf'):
-                    loader = PyPDFLoader(temp_file_path)
-                elif file.name.endswith(('.docx', '.doc')):
-                    loader = Docx2txtLoader(temp_file_path)
+                    content = file.read()
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    try:
+
+                        loader = PyPDFLoader(temp_file_path)
+                        documents.extend(loader.load())
+                    except Exception as e:
+                        print(e)
+                elif file.name.endswith(('.docx')) or file.name.endswith(('.doc')):
+                    content = file.read()
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    
+                    try:
+                        loader = Docx2txtLoader(temp_file_path)
+                        documents.extend(loader.load())
+                    except Exception as e:
+                        print(e)
+                        return "Say to the user like this: Please upload a proper document"
+                
                 elif file.name.endswith('.txt'):
-                    loader = TextLoader(temp_file_path)
+                    content = file.read()
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    try:
+                        loader = TextLoader(temp_file_path)
+                        documents.extend(loader.load())
+                    except Exception as e:
+                        print(e)
                 elif file.name.endswith('.xlsx'):
-                    loader = UnstructuredExcelLoader(temp_file_path)
+                    content = file.read()
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    try:
+                        loader = UnstructuredExcelLoader(temp_file_path)
+                        documents.extend(loader.load())
+                    except Exception as e:
+                        print(e)
                 elif file.name.endswith('.csv'):
-                    loader = CSVLoader(file_path=temp_file_path, encoding="utf-8", csv_args={'delimiter': ','})
+                    content = file.read()
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    try:
+                        loader = CSVLoader(file_path=temp_file_path, encoding="utf-8", csv_args={
+                'delimiter': ','})
+                        documents.extend(loader.load())
+                    except Exception as e:
+                        print(e)
                 else:
-                    return "Unsupported file format."
+                    return"Upload a proper format"
+                
 
-                documents.extend(loader.load())
-            except Exception as e:
-                print(f"Error loading {file.name}: {e}")
-
-        # Split the documents
+            
+        # Splitting the docs (this part may need adjustment based on the actual splitting mechanism)
+        print("Reader running")
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        splits = text_splitter.split_documents(documents)
-
+        PdfSplits = text_splitter.split_documents(documents)
+    
+        # Vector store
         try:
-            # Create FAISS vector store
-            vectorstore = FAISS.from_documents(splits, embedding=OpenAIEmbeddings())
-            prompt_template = ChatPromptTemplate.from_template("""You are a document reader chatbot. Answer the following questions based on the uploaded documents. If the query is unclear or the data is insufficient, ask the user to provide more details or clarify the query.
+            vectorstore = FAISS.from_documents(PdfSplits, embedding=OpenAIEmbeddings(api_key=llm.getKey()))
+            # prompt_template = ChatPromptTemplate.from_template("""You are documents QnA chatbot, you will asked to answer some queries, use the vectorstores to answer the queries.Generate proper answers for those queries.<context>{context}</context>.Question:{input}""")
+            prompt_template = ChatPromptTemplate.from_template("""You are an documents reader chatbot which helps in answering queries from the uploaded documents.Answer the following question from the vectorstoes.Answer the questions based on the user requirements.Find the most relevent answers from the vectorstores,If the query is not understood, please ask to rephrase it or provide a more elaborate query.If the vectorstoes columns or rows have missing colums or rows generate answers on the avaliable data on the vectorstores.Additionally, please make grammar and spelling corrections here.You are created by  VAST AI - from GDA/DJ Team:
 
-            <context>
-            {context}
-            </context>
+        <context>
+        {context}
+        </context>
 
-            Question: {input}""")
-
-            # Create retrieval chain
-            document_chain = create_stuff_documents_chain(llm, prompt_template)
+        Question: {input}""")
+            print("Reader running")
+            # Creating retrieval chain by stuffing the docs 
+            document_chain = create_stuff_documents_chain(llm.getllm(), prompt_template)
             retriever = vectorstore.as_retriever()
-            PDFLoader.retrieval_chain = create_retrieval_chain(retriever, document_chain)
+            pdf_loader.retrieval_chain = create_retrieval_chain(retriever, document_chain)
+            print(pdf_loader.retrieval_chain)
+
         except Exception as e:
-            print(f"Error creating retrieval chain: {e}")
+            print(e)
+
+
+        # Prompt defining
+        
+
+
 
 @tool
-def retrieve(query: str) -> str:
-    """Searches the documents for answers"""
-    print(f"Query: {query}")
+def data_reader(query: str) -> str:
+    """Helps in searching the uploaded docs for answers. Name is data_reader"""
+    print("Reader is Triggerd")
+    print(f"Input_Qurery:{query}")
     try:
-        response = PDFLoader.retrieval_chain.invoke({"input": query})
-        answer = response['answer']
+        response = pdf_loader.retrieval_chain.invoke({"input": query})
     except Exception as e:
-        print(f"Error retrieving answer: {e}")
-        return "No information available. Please try rephrasing your query."
-
-    print(f"Answer: {answer}")
+        print(e)
+        # If an error occurs during retrieval chain invocation, handle it  # Print detailed error information
+        return "I dont have any information regarding this try using the search tool to search the internet"
+        
+    answer = response['answer']
+    # print(conversation_history)
+    print(answer)
+    print("Reader is used")
     return answer
